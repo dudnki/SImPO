@@ -1,0 +1,42 @@
+# 가상환경
+.venv/
+
+# 데이터 (대용량)
+data/raw/
+data/processed/
+data/task_vectors/
+
+# 모델 출력물 (대용량)
+outputs/
+
+# MLflow
+mlflow.db
+mlruns/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 환경변수
+.env
+.env.*
+
+# 로그
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
