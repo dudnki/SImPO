@@ -1,0 +1,12 @@
+# Task Vector 추출 설정
+
+base_model: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
+adapter_path: "outputs/adapters/json_simpo"
+vector_output: "data/task_vectors/json_simpo.pt"
+
+save_lora_ab: false
+lora_ab_output: "data/task_vectors/json_simpo_ab.pt"
+
+mlflow:
+  tracking_uri: "sqlite:///mlflow.db"
+  experiment_name: "simpo_task_arithmetic"

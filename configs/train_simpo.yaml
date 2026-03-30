@@ -1,0 +1,54 @@
+# SimPO 학습 설정
+# 사용: python scripts/train_simpo.py (또는 오버라이드: python scripts/train_simpo.py model.lora_r=32)
+
+model:
+  name: "unsloth/Llama-3.2-3B-Instruct"  # bf16
+  max_seq_length: 2048
+  load_in_4bit: false
+
+  # LoRA
+  lora_r: 16
+  lora_alpha: 16       # alpha == r 고정 (스케일 변수 제거)
+  lora_dropout: 0.0    # Unsloth 최적화 조건
+  lora_target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+data:
+  path: "data/processed/helpfulness"
+  max_length: 1024
+  max_prompt_length: 512
+
+simpo:
+  beta: 2.0
+  gamma: 0.1
+
+training:
+  output_dir: "outputs/adapters/helpfulness_simpo"
+  num_train_epochs: 5
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16   # 유효 배치 = 16
+  learning_rate: 5.0e-6
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.1
+  max_grad_norm: 0.3
+  optim: "adamw_8bit"
+  bf16: true
+  logging_steps: 20
+  eval_strategy: "no"
+  eval_steps: 50
+  save_strategy: "epoch"
+  report_to: "mlflow"
+
+orthogonal:
+  tau_prev_path: null   # null = 일반 SimPO, 경로 지정 시 Orthogonal SimPO
+  alpha: 0.1            # cos² 패널티 가중치
+
+mlflow:
+  tracking_uri: "sqlite:///mlflow.db"
+  experiment_name: "simpo_task_arithmetic"

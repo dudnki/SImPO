@@ -1,80 +1,12 @@
 """
 데이터 필터링 유틸리티
-- 키워드 기반 태스크 분류
-- JSON 품질 검증
-- Hard Negative 감지
+- HH-RLHF 파싱 (harmlessness)
+- UltraFeedback 샘플링 (helpfulness)
+- SimPO 포맷 변환
 """
 
-import json
 import re
 from typing import Optional
-
-
-# 태스크별 키워드 맵
-TASK_KEYWORDS = {
-    "json": [
-        "json", "format", "structured output", "key-value",
-        "dictionary", "serialize", "schema", "parse json",
-    ],
-    "math": [
-        "calculate", "solve", "equation", "math", "arithmetic",
-        "algebra", "geometry",
-    ],
-    "code": [
-        "write code", "python", "function", "implement", "algorithm",
-        "debug", "script",
-    ],
-    "summarize": [
-        "summarize", "summary", "tldr", "brief", "shorten",
-    ],
-}
-
-
-def is_task(example: dict, task: str) -> bool:
-    """주어진 태스크에 해당하는 샘플인지 키워드로 판별"""
-    keywords = TASK_KEYWORDS.get(task, [])
-    text = " ".join([
-        example.get("prompt", ""),
-        example.get("instruction", ""),
-        example.get("input", ""),
-    ]).lower()
-    return any(kw in text for kw in keywords)
-
-
-def extract_json_blocks(text: str) -> list[str]:
-    """텍스트에서 JSON 블록 후보를 모두 추출"""
-    candidates = []
-
-    # ```json ... ``` 블록
-    fenced = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-    candidates.extend(fenced)
-
-    # 중괄호/대괄호로 시작하는 standalone JSON
-    inline = re.findall(r'(\{[\s\S]*?\}|\[[\s\S]*?\])', text)
-    candidates.extend(inline)
-
-    return candidates
-
-
-def is_valid_json_response(text: str) -> bool:
-    """응답 텍스트에 유효한 JSON이 포함되어 있는지 확인"""
-    for candidate in extract_json_blocks(text):
-        try:
-            json.loads(candidate)
-            return True
-        except (json.JSONDecodeError, ValueError):
-            continue
-    return False
-
-
-def is_hard_negative(example: dict) -> bool:
-    """
-    Hard Negative 조건:
-    chosen은 valid JSON 포함, rejected는 JSON 없거나 파싱 실패
-    """
-    chosen = example.get("chosen", "")
-    rejected = example.get("rejected", "")
-    return is_valid_json_response(chosen) and not is_valid_json_response(rejected)
 
 
 def get_response_text(value) -> str:
@@ -92,6 +24,35 @@ def get_response_text(value) -> str:
     return ""
 
 
+def parse_hh_conversation(text: str) -> tuple[str, str]:
+    """
+    HH-RLHF 대화 형식 파싱:
+    "\n\nHuman: ...\n\nAssistant: ...\n\nHuman: ...\n\nAssistant: ..."
+    → (마지막 Human 발화, 마지막 Assistant 응답)
+    """
+    # Human/Assistant 턴 분리
+    turns = re.split(r'\n\nHuman: |\n\nAssistant: ', text)
+    # 첫 빈 토큰 제거
+    turns = [t.strip() for t in turns if t.strip()]
+
+    # 대화 구조: [Human, Assistant, Human, Assistant, ...]
+    # 마지막 Human → prompt, 마지막 Assistant → response
+    human_turns = []
+    assistant_turns = []
+
+    # text가 "\n\nHuman:"으로 시작하므로 홀수 인덱스=Human, 짝수 인덱스+1=Assistant
+    # 더 안전하게: 원문에서 직접 파싱
+    human_pattern = re.findall(r'\n\nHuman: (.*?)(?=\n\nAssistant:|\Z)', text, re.DOTALL)
+    assistant_pattern = re.findall(r'\n\nAssistant: (.*?)(?=\n\nHuman:|\Z)', text, re.DOTALL)
+
+    if not human_pattern or not assistant_pattern:
+        return "", ""
+
+    last_human = human_pattern[-1].strip()
+    last_assistant = assistant_pattern[-1].strip()
+    return last_human, last_assistant
+
+
 def format_for_simpo(example: dict) -> Optional[dict]:
     """
     UltraFeedback binarized → SimPO 학습용 형식으로 변환
@@ -102,12 +63,38 @@ def format_for_simpo(example: dict) -> Optional[dict]:
     rejected = get_response_text(example.get("rejected", ""))
 
     if not prompt or not chosen or not rejected:
-        return None
+        return {"prompt": None, "chosen": None, "rejected": None}
     if chosen == rejected:
-        return None
+        return {"prompt": None, "chosen": None, "rejected": None}
 
     return {
         "prompt": prompt,
         "chosen": chosen,
         "rejected": rejected,
+    }
+
+
+def format_hh_for_simpo(example: dict) -> dict:
+    """
+    HH-RLHF 대화 형식 → SimPO 학습용 형식으로 변환
+    chosen/rejected 각각에서 마지막 Human/Assistant 턴 추출
+    """
+    chosen_text = example.get("chosen", "")
+    rejected_text = example.get("rejected", "")
+
+    prompt_c, chosen_resp = parse_hh_conversation(chosen_text)
+    prompt_r, rejected_resp = parse_hh_conversation(rejected_text)
+
+    # chosen과 rejected는 같은 대화 맥락을 공유하므로 prompt는 동일해야 함
+    prompt = prompt_c or prompt_r
+
+    if not prompt or not chosen_resp or not rejected_resp:
+        return {"prompt": None, "chosen": None, "rejected": None}
+    if chosen_resp == rejected_resp:
+        return {"prompt": None, "chosen": None, "rejected": None}
+
+    return {
+        "prompt": prompt,
+        "chosen": chosen_resp,
+        "rejected": rejected_resp,
     }

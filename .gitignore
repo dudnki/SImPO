@@ -37,6 +37,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Unsloth 컴파일 캐시
+unsloth_compiled_cache/
+
+# Claude Code
+.claude/
+
 # IDE
 .vscode/
 .idea/
